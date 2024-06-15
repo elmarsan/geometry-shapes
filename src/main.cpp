@@ -258,11 +258,11 @@ int main()
         mat4 lightModel{1.0f};
 
         lightModel = translate(lightModel, lightPos);
-        if (rotateLight)
-        {
-            lightModel = rotateAround(glfwGetTime() / 3, shapePos, vec3{1.0f, 2, 0}) *
-                         translate(lightModel, vec3{2.0f, 0, 2.0f});
-        }
+        /* if (rotateLight) */
+        /* { */
+        /*     lightModel = rotateAround(glfwGetTime() / 3, shapePos, vec3{1.0f, 2, 0}) * */
+        /*                  translate(lightModel, vec3{2.0f, 0, 2.0f}); */
+        /* } */
 
         lightShader.use();
         lightShader.setVec3("lightColor", lightColor);
@@ -278,8 +278,8 @@ int main()
         ////// Geometry shape //////
         auto objColor = colorMap.at(color);
 
-        shapeModel = translate(shapeModel, vec3{-0.9f, 0.5f, -2.0f});
-        shapeModel = scale(shapeModel, vec3{1.0f});
+        /* shapeModel = translate(shapeModel, vec3{-0.9f, 0.5f, -2.0f}); */
+        /* shapeModel = scale(shapeModel, vec3{1.0f}); */
 
         shapeShader.use();
         shapeShader.setVec3("objectColor", objectColor);
