@@ -3,26 +3,18 @@
 #include <imgui/imgui.h>
 #include <imgui/imgui_impl_glfw.h>
 #include <imgui/imgui_impl_opengl3.h>
-#include <glm/glm.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
 
 #include <cassert>
-#include <iostream>
 #include <unordered_map>
-#include <map>
-#include <cmath>
-#include <memory>
 
+#include "material.h"
 #include "shader.h"
 #include "camera.h"
 #include "math.h"
 #include "shape.h"
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
-void mouseCallback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow* window);
-
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 int screenWidth = 1200;
@@ -47,61 +39,8 @@ vec3 lightAmbient{0.2f};
 vec3 lightDiffuse{0.5f};
 vec3 lightSpecular{1.0f};
 
-////////////////////////////// COLORS ////////////////////////////////
-struct Material
-{
-    vec3 ambient;
-    vec3 diffuse;
-    vec3 specular;
-
-    float shininess;
-};
-
-/* struct Light : public Material */
-/* { */
-/*     vec3 ambient = vec3{0.2f}; */
-/*     vec3 diffuse = vec3{0.5f}; */
-/*     vec3 specular = vec3{1.0f}; */
-/* }; */
-
-struct ObjectColor
-{
-    /* vec3 color; */
-    Material material;
-    /* Light light; */
-};
-
-ObjectColor coral{
-    /* vec3{1.0f, 0.5f, 0.31f}, */
-    Material{
-        vec3{1.0f, 0.5f, 0.31f},
-        vec3{1.0f, 0.5f, 0.31f},
-        vec3{0.5f},
-        32.0f,
-    },
-};
-
-ObjectColor emerald{
-    /* vec3{80, 200, 120}, */
-    Material{
-        vec3{0.0215f, 0.1745f, 0.0215f},
-        vec3{0.07568f, 0.61424f, 0.07568f},
-        vec3{0.633f, 0.727811f, 0.633f},
-        76.0f,
-    },
-};
-
 mat4 shapeModel{1.0f};
 /////////////////////////////////////////////////////////////////////
-
-// T(x,y,z) * R * T(-x,-y,-z)
-mat4 rotateAround(const float rad, const vec3& point, const vec3& axis)
-{
-    auto t1 = translate(mat4{1.0f}, point * -1);
-    auto r = rotate(t1, rad, axis);
-    auto t2 = translate(r, point);
-    return t2 * r * t1;
-}
 
 int main()
 {
@@ -118,7 +57,6 @@ int main()
 
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-    glfwSetCursorPosCallback(window, mouseCallback);
     glfwSetScrollCallback(window, scrollCallback);
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
@@ -134,14 +72,15 @@ int main()
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
 
-    Shader shapeShader{"shape.vert", "shape.frag"};
-    Shader lightShader{"light_source.vert", "light_source.frag"};
-    Shader lightDirShader{"light_direction.vert", "light_direction.frag"};
+    Shader pongShader{"shaders/lightning_pong.vs", "shaders/lightning_pong.fs"};
+    Shader gouraudShader{"shaders/lightning_gouraud.vs", "shaders/lightning_gouraud.fs"};
+
+    Shader lightShader{"shaders/mvp.vs", "shaders/color.fs"};
+    Shader lightDirShader{"shaders/mvp.vs", "shaders/color.fs"};
 
     vec3 shapePos{0, 0, -1.0f};
 
     float lineVertices[] = {
-        /* 10, 10, 0, 0, 0, 0 */
         lightPos.x, lightPos.y, lightPos.z, shapePos.x, shapePos.y, shapePos.z,
     };
 
@@ -157,23 +96,37 @@ int main()
     glEnableVertexAttribArray(0);
 
     ////////// ImGui options //////////
-    std::string color = "Coral";
-    std::unordered_map<std::string, ObjectColor> colorMap{
+    std::string lightningModel = "Pong";
+    std::vector<std::string> lightningModels{"Pong", "Gouraud"};
+
+    std::string material = "Coral";
+    std::unordered_map<std::string, Material> materialMap{
         {"Coral", coral},
         {"Emerald", emerald},
+        {"Gold", gold},
     };
 
     std::string shape = "Cube";
     std::string lightShape = "Cube";
-    std::map<std::string, Shape> shapeMap{
+    std::unordered_map<std::string, Shape> shapeMap{
         {"Cube", Shape{ShapeType::CUBE}},
         {"Pyramid", {ShapeType::PYRAMID}},
         {"Cuboid", {ShapeType::CUBOID}},
     };
 
-    bool rotateLight = true;
+    bool rotateLight = false;
     bool showLightDirection = true;
     //////////////////////////////////
+
+    auto updateLightPos = [&](const vec3& v = lightPos)
+    {
+        lightPos = v;
+        lineVertices[0] = lightPos.x;
+        lineVertices[1] = lightPos.y;
+        lineVertices[2] = lightPos.z;
+        glBindBuffer(GL_ARRAY_BUFFER, lightDirVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(lineVertices), lineVertices, GL_DYNAMIC_DRAW);
+    };
 
     while (!glfwWindowShouldClose(window))
     {
@@ -194,7 +147,7 @@ int main()
             {
                 ImGui::Text("Camera");
                 ImGui::SliderFloat("Zoom", &camera.Zoom, 1, ZOOM, "%f.1", 0);
-                if (ImGui::SliderFloat("Pitch", &camera.Pitch, 1, PITCH, "%f.1", 0))
+                if (ImGui::SliderFloat("Pitch", &camera.Pitch, -PITCH, PITCH, "%f.1", 0))
                 {
                     camera.Update();
                 }
@@ -211,11 +164,11 @@ int main()
                 ImGui::Text("Geometry shape");
                 if (ImGui::TreeNode("Color"))
                 {
-                    for (const auto& [key, val] : colorMap)
+                    for (const auto& [key, val] : materialMap)
                     {
-                        if (ImGui::Selectable(key.c_str(), key == color))
+                        if (ImGui::Selectable(key.c_str(), key == material))
                         {
-                            color = key;
+                            material = key;
                         }
                     }
                     ImGui::TreePop();
@@ -239,8 +192,35 @@ int main()
             ImGui::BeginGroup();
             {
                 ImGui::Text("Lightning");
+                if (ImGui::TreeNode("Model"))
+                {
+                    for (const auto& model : lightningModels)
+                    {
+                        if (ImGui::Selectable(model.c_str(), lightningModel == model))
+                        {
+                            lightningModel = model;
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+
                 ImGui::Checkbox("Rotate", &rotateLight);
                 ImGui::Checkbox("Direction", &showLightDirection);
+
+                ImGui::SeparatorText("Light position");
+
+                if (ImGui::SliderFloat("X-axis", &lightPos.x, -5.0f, 5.0f, "%f.1", 0))
+                {
+                    updateLightPos();
+                }
+                if (ImGui::SliderFloat("Y-axis", &lightPos.y, -5.0f, 5.0f, "%f.1", 0))
+                {
+                    updateLightPos();
+                }
+                if (ImGui::SliderFloat("Z-axis", &lightPos.z, -5.0f, 5.0f, "%f.1", 0))
+                {
+                    updateLightPos();
+                }
             }
             ImGui::EndGroup();
         }
@@ -250,57 +230,63 @@ int main()
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // camera/view transformation
         mat4 view = camera.GetViewMatrix();
         mat4 projection = perspective(radians(camera.Zoom), float(screenWidth) / float(screenHeight), 0.1f, 100.0f);
 
         ////// Light //////
         mat4 lightModel{1.0f};
 
+        if (rotateLight)
+        {
+            updateLightPos(vec3{static_cast<float>(sin(glfwGetTime() * 2.0f) * 2),
+                                static_cast<float>(sin(glfwGetTime() * 0.7f) * 2),
+                                static_cast<float>(sin(glfwGetTime() * 1.3f) * 2)});
+        }
         lightModel = translate(lightModel, lightPos);
-        /* if (rotateLight) */
-        /* { */
-        /*     lightModel = rotateAround(glfwGetTime() / 3, shapePos, vec3{1.0f, 2, 0}) * */
-        /*                  translate(lightModel, vec3{2.0f, 0, 2.0f}); */
-        /* } */
+        lightModel = scale(lightModel, vec3{0.3f});
+        lightModel = rotate(lightModel, radians(55.0f), vec3{0.5f, 0, 0});
 
         lightShader.use();
-        lightShader.setVec3("lightColor", lightColor);
+        lightShader.setVec3("Color", lightColor);
 
         lightShader.setMat4("model", lightModel);
         lightShader.setMat4("view", view);
         lightShader.setMat4("projection", projection);
 
         shapeMap.at(lightShape).Draw(lightShader);
-
         ///////////////////////
 
         ////// Geometry shape //////
-        auto objColor = colorMap.at(color);
+        auto objMaterial = materialMap.at(material);
 
-        /* shapeModel = translate(shapeModel, vec3{-0.9f, 0.5f, -2.0f}); */
-        /* shapeModel = scale(shapeModel, vec3{1.0f}); */
+        auto shapeShader = &pongShader;
 
-        shapeShader.use();
-        shapeShader.setVec3("objectColor", objectColor);
-        shapeShader.setVec3("viewPos", camera.Position);
+        if (lightningModel == "Gouraud") 
+        {
+            shapeShader = &gouraudShader;
+        }
 
-        shapeShader.setVec3("light.position", lightPos);
-        shapeShader.setVec3("light.color", lightColor);
-        shapeShader.setVec3("light.ambient", lightAmbient);
-        shapeShader.setVec3("light.diffuse", lightDiffuse);
-        shapeShader.setVec3("light.specular", lightSpecular);
+        shapeShader->use();
 
-        shapeShader.setVec3("material.ambient", objColor.material.ambient);
-        shapeShader.setVec3("material.diffuse", objColor.material.diffuse);
-        shapeShader.setVec3("material.specular", objColor.material.specular);
-        shapeShader.setFloat("material.shininess", objColor.material.shininess);
+        shapeShader->setVec3("objectColor", objMaterial.color);
+        shapeShader->setVec3("viewPos", camera.Position);
 
-        shapeShader.setMat4("model", shapeModel);
-        shapeShader.setMat4("view", view);
-        shapeShader.setMat4("projection", projection);
+        shapeShader->setVec3("light.position", lightPos);
+        shapeShader->setVec3("light.color", lightColor);
+        shapeShader->setVec3("light.ambient", lightAmbient);
+        shapeShader->setVec3("light.diffuse", lightDiffuse);
+        shapeShader->setVec3("light.specular", lightSpecular);
 
-        shapeMap.at(shape).Draw(shapeShader);
+        shapeShader->setVec3("material.ambient", objMaterial.ambient);
+        shapeShader->setVec3("material.diffuse", objMaterial.diffuse);
+        shapeShader->setVec3("material.specular", objMaterial.specular);
+        shapeShader->setFloat("material.shininess", objMaterial.shininess);
+
+        shapeShader->setMat4("model", shapeModel);
+        shapeShader->setMat4("view", view);
+        shapeShader->setMat4("projection", projection);
+
+        shapeMap.at(shape).Draw(pongShader);
         ///////////////////////
 
         ////// Light direction //////
@@ -311,6 +297,7 @@ int main()
             lightDirShader.setMat4("model", mat4{1.0f});
             lightDirShader.setMat4("view", view);
             lightDirShader.setMat4("projection", projection);
+            lightDirShader.setVec3("Color", vec3{0, 1.0f, 0});
 
             glLineWidth(2.0f);
             glBindVertexArray(lightDirVAO);
@@ -366,30 +353,6 @@ void processInput(GLFWwindow* window)
     {
         shapeModel = rotate(shapeModel, radians(-1 * rotationSpeed), vec3{0, 0, 1});
     }
-}
-
-void mouseCallback(GLFWwindow* window, double xposIn, double yposIn)
-{
-    /* float xpos = static_cast<float>(xposIn); */
-    /* float ypos = static_cast<float>(yposIn); */
-
-    /* if (firstMouse) */
-    /* { */
-    /*     lastX = xpos; */
-    /*     lastY = ypos; */
-    /*     firstMouse = false; */
-    /* } */
-
-    /* float xoffset = xpos - lastX; */
-    /* float yoffset = lastY - ypos;  // reversed since y-coordinates go from bottom to top */
-    /* lastX = xpos; */
-    /* lastY = ypos; */
-
-    /* const float sensitivity = 0.27f;  // change this value to your liking */
-    /* xoffset *= sensitivity; */
-    /* yoffset *= sensitivity; */
-
-    /* camera.SetEulerAngles(xoffset, yoffset); */
 }
 
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
