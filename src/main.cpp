@@ -261,7 +261,7 @@ int main()
 
         auto shapeShader = &pongShader;
 
-        if (lightningModel == "Gouraud") 
+        if (lightningModel == "Gouraud")
         {
             shapeShader = &gouraudShader;
         }
@@ -285,6 +285,9 @@ int main()
         shapeShader->setMat4("model", shapeModel);
         shapeShader->setMat4("view", view);
         shapeShader->setMat4("projection", projection);
+
+        auto normalMatrix = mat3{shapeModel}.transpose().inverse();
+        shapeShader->setMat3("normal", normalMatrix);
 
         shapeMap.at(shape).Draw(pongShader);
         ///////////////////////

@@ -27,6 +27,8 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
+uniform mat3 normal;
+
 uniform vec3 viewPos;
 uniform Material material;
 uniform Light light;
@@ -35,7 +37,7 @@ void main()
 {
    gl_Position = projection * view * model * vec4(aPos, 1.0f);
    
-   vec3 Normal = mat3(transpose(inverse(model))) * aNormal;
+   vec3 Normal = normal * aNormal;
 
    vec3 FragPos = vec3(model * vec4(aPos, 1.0));
 
